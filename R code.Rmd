@@ -1,0 +1,1273 @@
+---
+title: "How different methods of regularized regression (Ridge, Lasso and Elastic net) perform on Diamonds and House price datasets"
+author: "Wasif Hameed"
+
+output:
+  pdf_document: default
+  html_document: default
+---
+
+In this project we decided to choose 2 datasets to see the performance of regularized regressions regarding variety of samples and dimensions in the data. To do so, firstly we  implement the glmnet function and tune the hyper parameners and our second step - to fit the cv.glmnet function with cross validation. This structure is applied to both datasets. A significant advantage of using the regularised regression is it can deal with overfitting as well as with multicollinearity. 
+
+We also would like to measure the performance of each method and to this extend we will compare R^2 and MSE/MRSE (depends on the function) th choose the better model. As we will see later it is always a trade off to choose either better R^2 or smaller error estimator.    
+
+The first dataset - diamonds with 53940 samples and 10 dimensions, the second - house proce prediction dataset with 1460 samples and 81 dimensions.
+
+# Diamonds dataset.
+
+First step is to install the necessary packages to perform analysis
+```{r results="hide"}
+library(magrittr)
+library(dplyr)
+library(caret)
+library(lattice)
+library(ggplot2)
+library(glmnet)
+library(Matrix)
+library(glmnetUtils)
+library(Matrix)
+library(corrplot)
+```
+
+Lets start with data itself by checking its structure and NA values. Also we don't need the first index value,
+that is why it has been deleted from the dataset.
+```{r}
+diam = read.csv('diamonds.csv', header = T, sep = ',')
+str(diam)
+nrow(diam)
+ncol(diam)
+
+diam = subset(diam, select = -(X))
+head(diam)
+
+any(is.na(diam))
+```
+As we can see by looking at the structure there are 3 factor variables with levels. So, the next step is to
+define amount of levels and in order to be able to build a model - convert them into integers. 
+
+The 'cut' variable has 4 levels
+```{r}
+unique(diam$cut)
+```
+
+The 'color' variable has 7 levels
+```{r}
+unique(diam$color)
+```
+
+The 'clarity' variable has 4 levels
+```{r}
+unique(diam$clarity)
+```
+
+```{r results="hide"}
+diam$cut = as.numeric(as.factor(unique(diam$cut)))
+diam$cut
+diam$color = as.numeric(as.factor(diam$color))
+diam$color
+diam$clarity = as.numeric(as.factor(diam$clarity))
+diam$clarity
+```
+Lets look at the heat plot of correlation between variables and the target variable. From the plot below we can see that a 'carat' factor has the most impact on the target variable - Price, while factors - 'x, y and z' have a significant negative correlation with dependent variable. The next issue that might be a problem for linear regression is that there is a multicollinearity between independent variables, but with regularized regression it won't impact on the models' outcomes.
+```{r}
+corrplot(cor(diam)) 
+```
+
+
+All data is reshaped and ready to be built into the models. The next step is to create the features and a target matrix
+where X - all factors and Y - dependent variable.
+
+Separate data for factors - x and dependent variable - y
+```{r}
+X = diam %>% select(carat, cut, color, clarity, depth, table, x, y, z)
+Y = diam$price
+
+```
+
+Scale data to adjust all variables to a certain values
+
+```{r}
+preprocessParams = preProcess(X, method = c("center", "scale"))
+X = predict(preprocessParams, X)
+```
+
+Split to training and testing samples
+```{r}
+set.seed(43)
+smp_size = createDataPartition(
+  Y,
+  p = 0.75,
+  list = F
+  )
+```
+Split data into training and testing
+```{r}
+X_train = X[smp_size,]
+X_test = X[-smp_size,]
+Y_train = Y[smp_size]
+Y_test = Y[-smp_size]
+```
+
+Now all data is prepared for applying regularized regressions. In order to obtain the best results we will apply 2 methods: 
+1. glmnet function and tune it with tuneGrid parameter 
+2. cv.glmnet function with tuning parameters 
+
+## First method - glmnet
+
+Here we start with Ridge then LASSO and Elastic net regressions.
+
+**Ridge**
+
+To make a Ridge regression we assign alpha to 0 and set a set.seed for the random process.
+
+```{r}
+set.seed(43)
+ridge = train(y = Y_train,
+             x = X_train,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 0, lambda = 1)
+             )
+```
+```{r}
+ridge
+```
+
+```{r}
+plot(ridge$finalModel, xvar = 'lambda', label = TRUE)
+```
+```{r}
+plot(varImp(ridge, scale = T))
+```
+
+
+By looking at the figures above we can see that the 'carat' variable has the most significant importance while building the model as well as 'x', 'y' and 'clarity'. And because Ridge regression can't set less important variable to 0, it assigns such variables toward 0 to have less impact on the model outcome. As we can see RMSE - 1521.799 and R^2 - 0.8559
+
+
+**LASSO**
+
+To make a LASSO regression we assign alpha to 1.
+
+```{r}
+set.seed(43)
+lasso = train(y= Y_train,
+             x = X_train,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 1, lambda = 1)
+             )
+```
+```{r}
+lasso
+```
+```{r}
+
+plot(lasso$finalModel, xvar = 'lambda', label = T)
+```
+```{r}
+plot(varImp(lasso, scale = T))
+```
+
+
+LASSO model results are a bit different, so now the 'carat' variable has the most significant importance as in Ridge while building the model as well as 'x', clarity' and 'color'. Here we can observe how Lasso regression chooses the variables and set to 0 the less important ones. As we can see RMSE - 1381.208 and R^2 - 0.88036  
+
+**Elastic net**
+
+In Elastic net regression we assign alpha to a random number = 0.5
+
+```{r}
+set.seed(43)
+elastic = train(y = Y_train,
+               x = X_train,
+               method = 'glmnet', 
+               tuneGrid = expand.grid(alpha = 0.5, lambda = 1)) 
+
+```
+
+
+```{r}
+elastic
+```
+
+
+```{r}
+plot(elastic$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+plot(varImp(elastic, scale = T))
+```
+
+
+This model shows a similar results as in LASSO, where 'carat' variable has the most significant importance while building the model as well as 'x', clarity' and 'color'. As we can see RMSE - 1388.581 and R^2 - 0.8791
+
+To have a clear understanding let's summarize the prediction results. 
+
+Predictions
+```{r}
+set.seed(43)
+predictions_ridge = ridge %>% predict(X_test)
+predictions_lasso = lasso %>% predict(X_test)
+predictions_elastic = elastic %>% predict(X_test)
+```
+
+Visualize predictions
+```{r}
+set.seed(43)
+data.frame(Ridge_R2 = R2(predictions_ridge, Y_test),
+           Lasso_R2 = R2(predictions_lasso, Y_test),
+           Elastic_R2 = R2(predictions_elastic, Y_test)
+           )
+```
+RMSE - Root Mean Square Error
+```{r}
+data.frame(Ridge_RMSE = RMSE(predictions_ridge, Y_test),
+           Lasso_RMSE = RMSE(predictions_lasso, Y_test),
+           Elastic_RMSE = RMSE(predictions_elastic, Y_test))
+```
+It is very interesting because the results of all 3 models are quite similar, but anyway if we don't round the results we can say that the Lasso regression performs better regarding the R^2 and RMSE on training dataset while Elastic performed better in prediction. The reason might lie in the dataset itself due to the number of dimensions and samples. It would also be intriguing to implement a linear regression and to compare the results then. 
+
+#### Training:
+
+##### Lasso: RMSE - 1381.208 and R^2 - 0.88036
+
+#### Testing:
+
+##### Elastic: RMSE - 1336.256 and R^2 - 0.8875892	
+
+Print coefficients 
+```{r}
+data.frame(
+  as.data.frame.matrix(coef(ridge$finalModel, ridge$bestTune$lambda)),
+  as.data.frame.matrix(coef(lasso$finalModel, lasso$bestTune$lambda)),
+  as.data.frame.matrix(coef(elastic$finalModel, elastic$bestTune$lambda))
+  ) %>% rename('Ridge' = X1, 'Lasso' = X1.1 , 'Elastic' = X1.2)
+
+
+```
+Noe we can continue with hyperparameters.
+
+### Tuning part - tune parameters by using tuneGrid and seq for lambda and alpha
+
+Firstly, let's set a vector of numbers to fit into the model
+
+```{r}
+parameters = seq(0, 20, length = 100)
+```
+
+**Ridge / Tune**
+```{r}
+set.seed(43)
+ridge_tune = train(
+             y= Y_train,
+             x = X_train,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 0, lambda = parameters)
+             )
+```
+
+```{r results="hide"}
+ridge_tune
+```
+
+
+```{r}
+plot(ridge_tune$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+plot(varImp(ridge_tune, scale = T))
+```
+
+
+The model results are the same as with the model without tuning (graph). The final values used for the model were alpha = 0 and lambda = 20 with RMSE = 1521.799 and R^2 =0.8558842.
+
+**LASSO / Tune**
+
+```{r}
+set.seed(43)
+lasso_tune = train(
+             y= Y_train,
+             x = X_train,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 1, lambda = parameters)
+             )
+```
+
+
+```{r results="hide"}
+lasso_tune
+```
+In Lasso regression the best lambda parameter is 2.828283 regarding the RMSE value. Thus we get RMSE = 1368.326 and R^2 = 0.8825790.
+
+```{r}
+plot(lasso_tune$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+plot(varImp(lasso_tune, scale = T))
+```
+
+
+Again, Lasso regression has the same results as it was previously (graph). The final values used for the model were alpha = 1 and lambda = 2.828283. Thus we get RMSE = 1368.326 and R^2 = 0.8825790.
+
+
+To tune Elastic net regression with parameters vector took more than 20 minutes and still no result ,to that point we will implement a different model with custom cross validation to tune it.
+Lets do a larger search for that by implementing a tuneLength = 10 and write a quick helper function to extract the row with the best tuning parameters. 
+```{r}
+set.seed(43)
+cv_10 = trainControl(method = "cv", number = 10) 
+elastic_tune_large = train(
+                    y= Y_train,
+                    x = X_train,
+                    method = "glmnet",
+                    trControl = cv_10,
+                    tuneLength = 10  
+                    )
+```
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+
+get_best_result(elastic_tune_large)
+```
+As we can see from the output the best alpha is 1 and lambda = 1.6991 with RMSE = 1361.352 and R^2 = 0.8837
+
+Test all 3 models and visualize predicted result as well as the RMSE
+
+Predictions 
+```{r}
+predictions_ridge_tune = ridge_tune %>% predict(X_test)
+predictions_lasso_tune = lasso_tune %>% predict(X_test)
+predictions_elastic_tune_large = elastic_tune_large %>% predict(X_test)
+```
+
+
+```{r}
+data.frame(Ridge_R2 = R2(predictions_ridge_tune, Y_test),
+           Lasso_R2 = R2(predictions_lasso_tune, Y_test),
+           Elastic_large_R2 = R2(predictions_elastic_tune_large, Y_test)
+           )
+
+```
+
+
+```{r}
+data.frame(Ridge_RMSE = RMSE(predictions_ridge_tune, Y_test),
+           Lasso_RMSE = RMSE(predictions_lasso_tune, Y_test),
+           Elastic_large_RMSE = RMSE(predictions_elastic_tune_large, Y_test)
+           )
+```
+Here, with the tuning parameters the best result regarding RMSE and R^2 has the Elastic net model with alpha = 1 and lambda = 1.6991 (on training and testing datasets). 
+
+#### Training:
+
+##### Elasric: RMSE = 1361.352 and R^2 = 0.8837; alpha is 1 and lambda = 1.6991
+
+#### Testing:
+
+##### Elastic: RMSE - 1336.263 and R^2 - 0.8875862		
+
+## Second method - cv.glmnet
+
+We are using this package due to the lambda. The best lambda for the data can be defined as the lambda that minimize the cross-validation prediction error rate. This can be determined automatically using the function cv.glmnet().
+
+Here we use mean square error as a method to select the optimal hyperparameter. And in prediction we plug the best lambda = lambda.1se
+to get an optimal accuracy and compare all 3 models.
+
+**Ridge**
+
+```{r}
+set.seed(43)
+ridge_cv = cv.glmnet(as.matrix(X_train),
+                     Y_train,
+                     type.measure = 'mse',
+                     alpha = 0,
+                     family = 'gaussian')
+
+ridge_cv.prediction = predict(ridge_cv,
+                              s = ridge_cv$lambda.1se,
+                              newx = as.matrix(X_test)
+                              )
+```
+
+```{r}
+Ridge_R2_cv = R2(ridge_cv.prediction, Y_test)
+Ridge_R2_cv
+```
+```{r}
+mean((Y_test - ridge_cv.prediction)^2)
+```
+```{r}
+ridge_cv_RMSE = RMSE(ridge_cv.prediction, Y_test)
+ridge_cv_RMSE
+```
+
+```{r}
+plot(ridge_cv)
+```
+```{r}
+plot(ridge_cv$glmnet.fit)
+```
+
+
+Having a ridge regression, the R^2 = 0.8603748 and RMSE = 1498.807
+
+**LASSO**
+
+```{r}
+set.seed(43)
+lasso_cv = cv.glmnet(as.matrix(X_train),
+                     Y_train,
+                     type.measure = 'mse',
+                     alpha = 1,
+                     family = 'gaussian')
+
+lasso_cv.prediction = predict(lasso_cv,
+                              s = lasso_cv$lambda.1se,
+                              newx = as.matrix(X_test)
+                              )
+```
+```{r}
+lasso_R2_cv = R2(lasso_cv.prediction, Y_test)
+lasso_R2_cv
+```
+
+```{r}
+lasso_cv_RMSE = RMSE(lasso_cv.prediction, Y_test)
+lasso_cv_RMSE
+```
+
+```{r}
+mean((Y_test - lasso_cv.prediction)^2)
+```
+
+
+```{r}
+plot(lasso_cv)
+```
+```{r}
+plot(lasso_cv$glmnet.fit)
+```
+
+
+The lasso regression performs slightly better with R^2 = 0.8841097 and MSE = 1357.401
+
+**Elastic net**
+
+```{r}
+set.seed(43)
+elastic_cv = cv.glmnet(as.matrix(X_train),
+                     Y_train,
+                     type.measure = 'mse',
+                     alpha = 0.5,
+                     family = 'gaussian')
+
+elastic_cv.prediction = predict(elastic_cv,
+                              s = elastic_cv$lambda.1se,
+                              newx = as.matrix(X_test)
+                              )
+```
+```{r}
+elastic_R2_cv = R2(elastic_cv.prediction, Y_test)
+elastic_R2_cv
+```
+```{r}
+elastic_cv_RMSE = RMSE(elastic_cv.prediction, Y_test)
+elastic_cv_RMSE
+```
+
+```{r}
+mean((Y_test - elastic_cv.prediction)^2)
+```
+
+
+```{r}
+plot(elastic_cv)
+```
+```{r}
+plot(elastic_cv$glmnet.fit)
+```
+
+#### With cv.glmnet the elastic model performs just a bit better, but it is also very interesting comparing the previous results with glmnet models.
+
+#### Summary of the results
+
+
+```{r}
+data.frame(ridge_mean = mean((Y_test - ridge_cv.prediction)^2),
+           lasso_mean = mean((Y_test - lasso_cv.prediction)^2),
+           elastic_mean = mean((Y_test - elastic_cv.prediction)^2)
+           )
+```
+
+
+```{r}
+predictions_ridge_cv = ridge_cv %>% predict(as.matrix(X_test))
+predictions_lasso_cv = lasso_cv %>% predict(as.matrix(X_test))
+predictions_elastic_cv = elastic_cv %>% predict(as.matrix(X_test))
+
+data.frame(Ridge_R2 = R2(predictions_ridge_cv, Y_test),
+            Lasso_R2 = R2(predictions_lasso_cv, Y_test),
+           Elastic_R2 = R2(predictions_elastic_cv, Y_test)
+          ) %>% rename('Ridge' = X1, 'Lasso' = X1.1, 'Elastic' = X1.2)
+```
+
+
+```{r}
+data.frame(Ridge_RMSE = RMSE(predictions_ridge_cv, Y_test),
+           Lasso_RMSE = RMSE(predictions_lasso_cv, Y_test),
+           Elastic_RMSE = RMSE(predictions_elastic_cv, Y_test)
+           )
+
+```
+Now lets try to fit Elatic net regression with bunch of values and for that we create a for loop and put those values into a result function.
+```{r}
+set.seed(43)
+list_fits = list()
+for (i in 0:10) {
+  fit.name = paste0('alpha', i/10)
+  
+  list_fits[[fit.name]] =
+    cv.glmnet(as.matrix(X_train),
+              Y_train,
+              type.measure = 'mse',
+              alpha = i/10,
+              family = 'gaussian')
+               }
+```
+
+```{r}
+set.seed(43)
+results = data.frame()
+for (i in 0:10) {
+  fit.name = paste0('alpha', i/10)
+  
+  predicted = 
+    predict(list_fits[[fit.name]],
+            s = list_fits[[fit.name]]$lambda.1se,
+            newx = as.matrix(X_test))
+  
+  mse = mean((Y_test - predicted)^2)
+  
+  temp = data.frame(alpha = i/10,  mse = mse, fit.name = fit.name)
+  results = rbind(results, temp)
+               }
+```
+```{r}
+results
+```
+Alpha = 0.6 is the best valuer according to MSE parameter, lets fit it into the model.
+```{r}
+set.seed(43)
+elastic06_cv = cv.glmnet(as.matrix(X_train),
+                     Y_train,
+                     type.measure = 'mse',
+                     alpha = 0.6,
+                     family = 'gaussian')
+
+elastic06_cv.prediction = predict(elastic06_cv,
+                              s = elastic06_cv$lambda.1se,
+                              newx = as.matrix(X_test)
+                              )
+```
+```{r}
+predictions_elastic06_cv = elastic06_cv %>% predict(as.matrix(X_test))
+Elastic06_R2 = R2(predictions_elastic06_cv, Y_test)
+Elastic06_R2
+```
+```{r}
+elastic06_RMSE = RMSE(predictions_elastic06_cv, Y_test)
+elastic06_RMSE
+```
+
+R^2 = 0.8844829, MSE = 1814626
+
+Let's sum up the model results with glmnet and cv.glmnet function. It's essential to understand that having a big sample size and a small number of dimensions the results are similar but still we can distinguish and choose the best model. 
+
+When we were trying the glmnet function the best model was Elatic_tune_large with R^2 = 0.8875862	and RMSE = 1336.263, having alpha = 1 and lambda = 1.6991.
+With cv.glmnet the best model elastic net with alpha = 0.6, where R^2 = 0.8844829 and RMSE = 1355.332. Even though the we are dealing with almost equal values, the Elastic net model with parameter tuning has the best results according to R^2 and RMSE simultaneously of the glmnet function.  
+
+# House price prediction dataset
+
+We will be able to see a different angle of regularized regression because this dataset has only 1460 samples and 81 dimensions including a target variable.
+
+
+```{r}
+house = read.csv('train.csv.xlw', header = T, sep = ',')
+str(house)
+```
+
+In this dataset we are dealing with NA values and string values with levels. Our first step is to delete the columns which contain all NA, secondly we need to see the columns with string values and convert it into integers and the last step is to view and replace NA values of the rest columns by applying the mean function.
+
+```{r}
+house = subset(house, select = -c(Alley, PoolQC, Fence, MiscFeature))
+```
+
+
+```{r results="hide"}
+is.na(house)
+```
+
+
+```{r results="hide"}
+house %>% select(which(sapply(house,is.character)))
+```
+```{r}
+house$MSZoning  = as.numeric(as.factor(house$MSZoning))
+house$Street = as.numeric(as.factor(house$Street))
+house$LotShape = as.numeric(as.factor(house$LotShape))
+house$LandContour = as.numeric(as.factor(house$LandContour)) 
+house$Utilities = as.numeric(as.factor(house$Utilities))    
+house$LotConfig  = as.numeric(as.factor(house$LotConfig))    
+house$LandSlope  = as.numeric(as.factor(house$LandSlope))   
+house$Neighborhood   = as.numeric(as.factor(house$Neighborhood))
+house$Condition1  = as.numeric(as.factor(house$Condition1))   
+house$Condition2  = as.numeric(as.factor(house$Condition2))  
+house$BldgType   = as.numeric(as.factor(house$BldgType))   
+house$HouseStyle  = as.numeric(as.factor(house$HouseStyle))  
+house$RoofStyle  = as.numeric(as.factor(house$RoofStyle))
+house$RoofMatl   = as.numeric(as.factor(house$RoofMatl))   
+house$Exterior1st  = as.numeric(as.factor(house$Exterior1st)) 
+house$Exterior2nd  = as.numeric(as.factor(house$Exterior2nd)) 
+house$MasVnrType   = as.numeric(as.factor(house$MasVnrType)) 
+house$ExterQual   = as.numeric(as.factor(house$ExterQual))  
+house$ExterCond   = as.numeric(as.factor(house$ExterCond))  
+house$Foundation  = as.numeric(as.factor(house$Foundation))   
+house$BsmtQual   = as.numeric(as.factor(house$BsmtQual))   
+house$BsmtCond  = as.numeric(as.factor(house$BsmtCond))     
+house$BsmtExposure  = as.numeric(as.factor(house$BsmtExposure)) 
+house$BsmtFinType1  = as.numeric(as.factor(house$BsmtFinType1))
+house$BsmtFinType2  = as.numeric(as.factor(house$BsmtFinType2))
+house$Heating  = as.numeric(as.factor(house$Heating))     
+house$HeatingQC  = as.numeric(as.factor(house$HeatingQC))   
+house$CentralAir  = as.numeric(as.factor(house$CentralAir))  
+house$Electrical  = as.numeric(as.factor(house$Electrical))  
+house$KitchenQual  = as.numeric(as.factor(house$KitchenQual)) 
+house$Functional  = as.numeric(as.factor(house$Functional)) 
+house$GarageType  = as.numeric(as.factor(house$GarageType))  
+house$GarageFinish  = as.numeric(as.factor(house$GarageFinish)) 
+house$GarageQual  = as.numeric(as.factor(house$GarageQual))  
+house$GarageCond  = as.numeric(as.factor(house$GarageCond))  
+house$PavedDrive  = as.numeric(as.factor(house$PavedDrive))  
+house$SaleType  = as.numeric(as.factor(house$SaleType))    
+house$SaleCondition = as.numeric(as.factor(house$SaleCondition))
+house$FireplaceQu = as.numeric(as.factor(house$FireplaceQu))
+```
+
+
+```{r results="hide"}
+str(house)
+```
+
+
+```{r}
+colSums(is.na(house))
+```
+```{r}
+house$ LotFrontage[is.na(house$ LotFrontage)] <- mean(house$ LotFrontage, na.rm = TRUE)
+house$BsmtQual[is.na(house$BsmtQual)] <- mean(house$BsmtQual, na.rm = TRUE)
+house$MasVnrType [is.na(house$MasVnrType )] <- mean(house$MasVnrType , na.rm = TRUE)
+house$MasVnrArea[is.na(house$MasVnrArea)] <- mean(house$MasVnrArea, na.rm = TRUE)
+house$BsmtCond [is.na(house$BsmtCond )] <- mean(house$BsmtCond , na.rm = TRUE)
+house$BsmtExposure [is.na(house$BsmtExposure )] <- mean(house$BsmtExposure , na.rm = TRUE)
+house$ BsmtFinType1 [is.na(house$ BsmtFinType1 )] <- mean(house$ BsmtFinType1 , na.rm = TRUE)
+house$BsmtFinType2 [is.na(house$BsmtFinType2 )] <- mean(house$BsmtFinType2 , na.rm = TRUE)
+house$Electrical[is.na(house$Electrical)] <- mean(house$Electrical, na.rm = TRUE)
+house$GarageType[is.na(house$GarageType)] <- mean(house$GarageType, na.rm = TRUE)
+house$GarageYrBlt[is.na(house$GarageYrBlt)] <- mean(house$GarageYrBlt, na.rm = TRUE)
+house$GarageFinish [is.na(house$GarageFinish )] <- mean(house$GarageFinish , na.rm = TRUE)
+house$GarageQual [is.na(house$GarageQual )] <- mean(house$GarageQual , na.rm = TRUE)
+house$GarageCond [is.na(house$GarageCond )] <- mean(house$GarageCond , na.rm = TRUE)
+house$FireplaceQu [is.na(house$FireplaceQu )] <- mean(house$FireplaceQu , na.rm = TRUE)
+```
+
+Check if we are missing some NA values 
+```{r}
+any(is.na(house))
+```
+
+Now as the data is prepared we can start split the data and implement Ridge, LASSO and Elastic net regressions 
+
+Separate data for factors - x and dependent variable - y
+```{r}
+X = select(house, -(SalePrice))
+Y = house$SalePrice
+```
+
+Scale data to adjust all variables to a certain values
+```{r}
+preprocessParams = preProcess(X, method = c("center", "scale"))
+X = predict(preprocessParams, X)
+```
+
+Split to training and testing samples
+
+```{r}
+set.seed(43)
+smp_split = createDataPartition(
+  Y,
+  p = 0.75,
+  list = F
+)
+```
+
+Split data into training and testing
+```{r}
+X_train_h = X[smp_split,]
+X_test_h = X[-smp_split,]
+Y_train_h = Y[smp_split]
+Y_test_h = Y[-smp_split]
+```
+
+As with Diamonds dataset, firstly we implement 
+1. glmnet function and tune it with tuneGrid parameter 
+2. cv.glmnet function with tuning parameters 
+
+## First method
+Here we start with the same procedure and firstly apply the regressions and then do a parameter tuning. 
+
+**Ridge**
+
+```{r}
+set.seed(43)
+ridgeHouse = train(y = Y_train_h,
+             x = X_train_h,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 0, lambda = 1))
+```
+
+
+```{r}
+ridgeHouse
+```
+
+
+```{r}
+plot(ridgeHouse$finalModel, xvar = 'lambda', label = T)
+```
+
+Create plot of importance of variables
+```{r}
+
+house_imp_ridge = varImp(ridgeHouse, scale = T)
+
+ggplot(data = house_imp_ridge, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: Ridge regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+
+```
+Due to a relative big amount of factors, the ggplot has been created and in order to actually see the most important variables they were put into 2 levels. The most important factors are overall quality and quality of separated house areas (garage, kitchen, basement, bath, rooth and etc.).
+
+In Ridge model the R^2 = 0.7788271 and RMSE = 39891.31
+
+**LASSO**
+```{r}
+set.seed(43)
+lassoHouse = train(y= Y_train_h,
+             x = X_train_h,
+             method = 'glmnet', 
+             tuneGrid = expand.grid(alpha = 1, lambda = 1))
+```
+
+
+```{r}
+lassoHouse
+```
+
+
+```{r}
+plot(lassoHouse$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+house_imp_lasso = varImp(lassoHouse, scale = T)
+
+ggplot(data = house_imp_lasso, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: Lasso regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+Lasso regression performed slightly worse than a ridge regression with outcome R^2 = 0.7684446 , RMSE = 41117.24
+
+**Elastic net**
+```{r}
+set.seed(43)
+elasticHouse  = train(y = Y_train_h,
+               x = X_train_h,
+               method = 'glmnet', 
+               tuneGrid = expand.grid(alpha = 0.5, lambda = 1))
+```
+
+
+```{r}
+elasticHouse 
+```
+
+
+```{r}
+plot(elasticHouse$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+house_imp_elastic = varImp(elasticHouse, scale = T)
+
+ggplot(data = house_imp_elastic, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: Elastic regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+As well as Elastic net has worse results compared to ridge regression. R^2 = 0.7685146, RMSE = 41107.44 .  
+
+Predictions
+
+```{r}
+predictions_ridgeHouse = ridgeHouse %>% predict(as.matrix(X_test_h))
+predictions_lassoHouse = lassoHouse %>% predict(as.matrix(X_test_h))
+predictions_elasticHouse = elasticHouse %>% predict(as.matrix(X_test_h))
+
+data.frame(Ridge_R2 = R2(predictions_ridgeHouse, Y_test_h),
+            Lasso_R2 = R2(predictions_lassoHouse, Y_test_h),
+           Elastic_R2 = R2(predictions_elasticHouse, Y_test_h)
+          ) 
+```
+
+
+```{r}
+data.frame(Ridge_RMSE = RMSE(predictions_ridgeHouse, Y_test_h),
+           Lasso_RMSE = RMSE(predictions_lassoHouse, Y_test_h),
+           Elastic_RMSE = RMSE(predictions_elasticHouse, Y_test_h)
+           )
+
+```
+#### In this dataset the best model was Ridge regression with  R^2 = 0.7788271 and RMSE = 39891.31 on training and testing sets.
+###### Training: R^2 = 0.7788271 and RMSE = 39891.31
+######T esting: R^2 = 0.8512382 and RMSE = 27262.1	(we could increase the acciracy by decreasing the error)
+
+### Tuning part - tune parameters by using tuneGrid and seq for lambda and alpha
+
+Firstly set a vector of numbers to fit into the model
+
+```{r}
+set.seed(43)
+parameters_h = seq(0, 10000, length = 100)
+```
+
+**Ridge / Tune**
+```{r}
+set.seed(43)
+ridgeHouse_tune = train(
+  y= Y_train_h,
+  x = X_train_h,
+  method = 'glmnet', 
+  tuneGrid = expand.grid(alpha = 0, lambda = parameters_h)
+)
+```
+
+
+```{r results="hide"}
+ridgeHouse_tune
+```
+In here regarding RMSE = 39446.70 and R^2 = 0.7827244 the best lambda = 10000
+
+```{r}
+plot(ridgeHouse_tune$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+house_imp_ridge_tune = varImp(ridgeHouse_tune, scale = T)
+
+ggplot(data = house_imp_ridge_tune, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: RidgeTune regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+In lasso regression RMSE = 39446.70, R^2 = 0.7827244  with lambda = 10000
+We will see more specific results a bit later, but for now just some of the variables are toward 0.
+
+
+**LASSO / Tune**
+```{r}
+set.seed(43)
+lassoHouse_tune = train(
+  y= Y_train_h,
+  x = X_train_h,
+  method = 'glmnet', 
+  tuneGrid = expand.grid(alpha = 1, lambda = parameters_h)
+)
+```
+
+```{r results="hide"}
+lassoHouse_tune
+```
+
+```{r}
+plot(lassoHouse_tune$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+house_imp_lasso_tune = varImp(lassoHouse_tune, scale = T)
+
+ggplot(data = house_imp_lasso_tune, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: LassoTune regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+
+```
+In lasso regression RMSE = 38856.78, R^2 = 0.7881366 with lambda = 2121.212. Also this model has fascinating process of choosing the parameters, about 50% are set to 0. 
+The lasso model performed better than ridge regression.
+
+**Elastic / Tune **
+
+To tune Elastic net regression with parameters vector it took more than 20 minutes and still no result to that point we will implement a different model to tune it.
+Given a larger model with custom 10-fold cross validation and tuneLength = 10 and write a quick helper function to extract the row with the tuning parameters.
+```{r}
+set.seed(43)
+elasticHouse_tune_large = train(
+  y= Y_train_h,
+  x = X_train_h,
+  method = "glmnet",
+  trControl = cv_10,
+  tuneLength = 10  
+)
+```
+
+
+```{r results="hide"}
+elasticHouse_tune_large
+```
+
+
+```{r}
+plot(elasticHouse_tune_large$finalModel, xvar = 'lambda', label = T)
+```
+
+
+```{r}
+house_imp_elastic_tune_large = varImp(elasticHouse_tune_large, scale = T)
+
+ggplot(data = house_imp_elastic_tune_large, mapping = aes(x = house_imp[,1])) + 
+  geom_boxplot() + 
+  labs(title = "Variable importance: ElasticTuneLarge regression") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 7)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+This graph is something between ridge and lasso regression. If we recall the ridge regression importance variable graph - some of the variables were toward 0, while lasso regression decided to set about 50% to 0. With elastic regression about 25% not included in the model and the rest variables are distributed regarding the impact on depended variable.
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+
+get_best_result(elasticHouse_tune_large)
+```
+We gave very interesting and intriguing results, by tuning parameters we increased the accuracy and decreased the error. The elastic net is a perfect fit for this dataset with RMSE = 36030.22,	R^2 = 0.826905; alpha = 0.1 and lambda = 10599.73.
+
+```{r}
+predictions_ridgeHouse_tune = ridgeHouse_tune %>% predict(X_test_h)
+predictions_lassoHouse_tune = lassoHouse_tune %>% predict(X_test_h)
+predictions_elasticHouse_tune_large = elasticHouse_tune_large %>% predict(X_test_h)
+```
+
+
+```{r}
+data.frame(Ridge_R2 = R2(predictions_ridgeHouse_tune, Y_test_h),
+           Lasso_R2 = R2(predictions_lassoHouse_tune, Y_test_h),
+           Elastic_large_R2 = R2(predictions_elasticHouse_tune_large, Y_test_h)
+)
+
+```
+
+
+```{r}
+
+
+data.frame(Ridge_RMSE = RMSE(predictions_ridgeHouse_tune, Y_test_h),
+           Lasso_RMSE = RMSE(predictions_lassoHouse_tune, Y_test_h),
+           Elastic_large_RMSE = RMSE(predictions_elasticHouse_tune_large, Y_test_h)
+)
+```
+In the tuning section the best model depends on the accuracy or error value. With Ridge regression R^2 = 0.8518313	and RMSE = 27198.56 when Elastic net has R^2 = 0.8523244	higher as well as the RMSE = 27224.66. 	
+
+#### Results
+
+
+Comparing the glmnet method with and without tuning we can say that better outcome has either Ridge regression with lower R^2 and RMSE or Elastic net regression with a bit higher R^2 and RMSE. We csn go with the low error term and pick the Ridge regression model.  
+
+
+
+
+## Second method - cv.glmnet
+
+**Ridge**
+```{r}
+set.seed(43)
+ridgeHouse_cv = cv.glmnet(as.matrix(X_train_h),
+                     Y_train_h,
+                     type.measure = 'mse',
+                     alpha = 0,
+                     family = 'gaussian')
+
+ridgeHouse_cv.prediction = predict(ridgeHouse_cv,
+                              s = ridgeHouse_cv$lambda.1se,
+                              newx = as.matrix(X_test_h)
+)
+ridgeHouse_R2_cv = R2(ridgeHouse_cv.prediction, Y_test_h)
+ridgeHouse_R2_cv
+```
+```{r}
+ridgeHouse_cv_RMSE = RMSE(ridgeHouse_cv.prediction, Y_test_h)
+ridgeHouse_cv_RMSE
+```
+
+```{r}
+ridgeHouse_cv
+```
+```{r}
+plot(ridgeHouse_cv$glmnet.fit)
+```
+Ridge regression has RMSE = 34294.87, R^2 = 0.8280079.
+
+
+
+**LASSO**
+```{r}
+set.seed(43)
+lassoHouse_cv = cv.glmnet(as.matrix(X_train_h),
+                     Y_train_h,
+                     type.measure = 'mse',
+                     alpha = 1,
+                     family = 'gaussian')
+
+lassoHouse_cv.prediction = predict(lassoHouse_cv,
+                              s = lassoHouse_cv$lambda.1se,
+                              newx = as.matrix(X_test_h)
+)
+lassoHouse_R2_cv = R2(lassoHouse_cv.prediction, Y_test_h)
+lassoHouse_R2_cv
+```
+```{r}
+lassoHouse_cv_RMSE = RMSE(lassoHouse_cv.prediction, Y_test_h)
+lassoHouse_cv_RMSE
+```
+
+```{r}
+plot(lassoHouse_cv$glmnet.fit)
+```
+
+
+Lasso regression has RMSE = 37790.53 , R^2 = 0.7684388
+
+
+
+**Elastic**
+```{r}
+set.seed(43)
+elasticHouse_cv = cv.glmnet(as.matrix(X_train_h),
+                       Y_train_h,
+                       type.measure = 'mse',
+                       alpha = 0.5,
+                       family = 'gaussian')
+
+elasticHouse_cv.prediction = predict(elasticHouse_cv,
+                                s = elasticHouse_cv$lambda.1se,
+                                newx = as.matrix(X_test_h)
+)
+elasticHouse_R2_cv = R2(elasticHouse_cv.prediction, Y_test_h)
+elasticHouse_R2_cv
+```
+```{r}
+elasticHouse_cv_RMSE = RMSE(elasticHouse_cv.prediction, Y_test_h)
+elasticHouse_cv_RMSE
+```
+
+```{r}
+plot(elasticHouse_cv$glmnet.fit)
+```
+
+
+Elastic regression has RMSE = 37346.2 , R^2 = 0.7948243
+
+```{r}
+data.frame(ridgeHouse_mean = mean((Y_test_h - ridgeHouse_cv.prediction)^2),
+           lassoHouse_mean = mean((Y_test_h - lassoHouse_cv.prediction)^2),
+           elasticHouse_mean = mean((Y_test_h - elasticHouse_cv.prediction)^2)
+           )
+
+```
+
+
+```{r results='hide'}
+predictions_lassoHouse_cv = lassoHouse_cv %>% predict(as.matrix(X_test_h))
+predictions_lassoHouse_cv
+predictions_ridgeHouse_cv = ridgeHouse_cv %>% predict(as.matrix(X_test_h))
+predictions_ridgeHouse_cv
+predictions_elasticHouse_cv = elasticHouse_cv %>% predict(as.matrix(X_test_h))
+predictions_elasticHouse_cv
+
+ 
+```
+```{r}
+data.frame(RidgeHouse_R2 = R2(predictions_ridgeHouse_cv, Y_test_h),
+           LassoHouse_R2 = R2(predictions_lassoHouse_cv, Y_test_h),
+           ElasticHouse_R2 = R2(predictions_elasticHouse_cv, Y_test_h)
+) %>% rename( 'RidgeHouse_R2' = X1, 'LassoHouse_R2' = X1.1,
+                         'ElasticHouse_R2' = X1.2)
+```
+
+RMSE
+```{r}
+data.frame(RidgeHouse_RMSE = RMSE(predictions_ridgeHouse_cv, Y_test_h),
+           LassoHouse_RMSE = RMSE(predictions_lassoHouse_cv, Y_test_h),
+           ElasticHouse_RMSE = RMSE(predictions_elasticHouse_cv, Y_test_h)
+)
+
+```
+
+
+```{r}
+set.seed(43)
+list_fits = list()
+for (i in 0:10) {
+  fit.name = paste0('alpha', i/10)
+  
+  list_fits[[fit.name]] =
+    cv.glmnet(as.matrix(X_train_h),
+              Y_train_h,
+              type.measure = 'mse',
+              alpha = i/10,
+              family = 'gaussian')
+}
+```
+
+
+```{r}
+set.seed(43)
+results = data.frame()
+for (i in 0:10) {
+  fit.name = paste0('alpha', i/10)
+  
+  predicted = 
+    predict(list_fits[[fit.name]],
+            s = list_fits[[fit.name]]$lambda.1se,
+            newx = as.matrix(X_test_h))
+  
+  mse = mean((Y_test_h - predicted)^2)
+ 
+  temp = data.frame(alpha = i/10,  mse = mse, fit.name = fit.name)
+  results = rbind(results, temp)
+}
+results
+```
+ 
+```{r}
+set.seed(43)
+elasticHouse0_cv = cv.glmnet(as.matrix(X_train_h),
+                       Y_train_h,
+                       type.measure = 'mse',
+                       alpha = 0.1,
+                       family = 'gaussian')
+
+elasticHouse0_cv.prediction = predict(elasticHouse0_cv,
+                                s = elasticHouse0_cv$lambda.1se,
+                                newx = as.matrix(X_test_h)
+                                )
+predictions_elasticHouse0_cv = elasticHouse0_cv %>% predict(as.matrix(X_test_h)) 
+ElasticHouse0_R2 = R2(predictions_elasticHouse0_cv, Y_test_h)
+ElasticHouse0_R2 
+```
+```{r}
+elasticHouse0_cv_RMSE = RMSE(elasticHouse0_cv.prediction, Y_test_h)
+elasticHouse0_cv
+```
+```{r}
+elasticHouse0_cv_RMSE = RMSE(elasticHouse0_cv.prediction, Y_test_h)
+elasticHouse0_cv_RMSE
+```
+ By looking at all 4 models using cv.glmnet the best ones are Ridge regression ( RMSE = 34294.87, R^2 = 0.8280079) and Elastic regression with alpha = 0.1 (RMSE =35898.08 , R^2 = 0.8187666). But the best one remains Ridge regression.
+ 
+##### Trying glmnet and cv.glmnet the best performance was showed in Ridge regression regarding testing set. 
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
